@@ -1,70 +1,101 @@
-#train,val,testの自動分割
-
 import glob 
 import os
 import random
+import shutil
 
-dataset = "YOLOtest"#データセット元のディレクトリ名(YOLOtest)の指定
+# --- 設定 ---
+dataset_path = "~/pepper_ws/detaset_storage/avoa_data"
+dataset = os.path.expanduser(dataset_path)
 
-#labelディレクトリ内の.txtを取得
-img_list = glob.glob(os.path.join(dataset + "/label", "*.txt"))
+# 画像とラベルの親ディレクトリ
+labels_dir = os.path.join(dataset, "labels")
+images_dir = os.path.join(dataset, "images")
 
-#シャッフル
-random.shuffle(img_list)
+# 対応する画像拡張子のリスト（ここに追加すれば他の形式も対応可能）
+valid_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".JPG", ".PNG", ".JPEG"]
 
-#データの分割
-num_data = len(img_list)
+# --- 1. ファイルリストの取得 ---
+# labels フォルダ直下の .txt ファイルのみを取得
+txt_files = glob.glob(os.path.join(labels_dir, "*.txt"))
+
+# フィルタリング: 
+# 1. サブフォルダ（train/valなど）内のファイルは除外
+# 2. classes.txt は除外
+txt_files = [
+    f for f in txt_files 
+    if os.path.dirname(f) == labels_dir 
+    and os.path.basename(f) != "classes.txt"
+]
+
+if not txt_files:
+    print(f"エラー: {labels_dir} に有効な .txt ファイルが見つかりません。")
+    exit()
+
+print(f"総データ数 (classes.txt除く): {len(txt_files)}")
+
+# --- 2. シャッフルと分割 (6:4) ---
+random.shuffle(txt_files)
+
+num_data = len(txt_files)
 num_train = int(num_data * 0.6)
-num_val = int(num_data * 0.2)
-num_test = num_data - num_train - num_val
-"""
-ここのパラメータを変更することでデータセットないの分割比率を変更出来ます
-num_train = int(num_data * 0.6)←の0.6と　num_val = int(num_data * 0.2)←の0.2を好きに変更してください。
-この場合だと(学習、検証、テスト)=(6:2:2)の比率です。
-"""
+# 残りを val に
+num_val = num_data - num_train 
 
-#辞書に隔離
+print(f"Train: {num_train}, Val: {num_val} に分割します。")
+
 split_dict = {
-    "train": img_list[:num_train],
-    "valid": img_list[num_train:num_train + num_val],
-    "test": img_list[num_train + num_val:]
+    "train": txt_files[:num_train],
+    "val": txt_files[num_train:]
 }
 
-# ディレクトリを作成
+# --- 3. ディレクトリ作成 ---
 for folder in ["images", "labels"]:
-    # images/train, images/valid, images/test のように作成
-    for split in ["train", "valid", "test"]:
+    for split in ["train", "val"]:
         dir_path = os.path.join(dataset, folder, split)
         os.makedirs(dir_path, exist_ok=True)
-        
-# ファイルをコピー
+
+# --- 4. 画像を探してコピー ---
+copy_count = 0
+missing_count = 0
+
+print("処理を開始します...")
+
 for split, paths in split_dict.items():
     for txt_path in paths:
-        # 対応する画像ファイルのパスを取得
-        img_path = txt_path.replace("label", "image").replace(".txt", ".jpg")
+        # ファイル名（拡張子なし）を取得 (例: /.../abc.txt -> abc)
+        basename = os.path.splitext(os.path.basename(txt_path))[0]
+        
+        # 対応する画像を探す
+        found_img_path = None
+        for ext in valid_extensions:
+            potential_path = os.path.join(images_dir, basename + ext)
+            if os.path.exists(potential_path):
+                found_img_path = potential_path
+                break # 見つかったらループを抜ける
+        
+        # 画像が見つからなかった場合
+        if found_img_path is None:
+            print(f"警告: 画像が見つかりません (ID: {basename})")
+            missing_count += 1
+            continue
 
-        # コピー先のディレクトリ
-        label_dest = os.path.join(dataset, "labels", split)
-        img_dest = os.path.join(dataset, "images", split)
+        # コピー先のパス決定
+        # 画像の拡張子は元のファイルに合わせる (found_img_pathから取得)
+        img_filename = os.path.basename(found_img_path)
+        
+        label_dest = os.path.join(dataset, "labels", split, os.path.basename(txt_path))
+        img_dest = os.path.join(dataset, "images", split, img_filename)
 
         # ファイルをコピー
-        os.system(f"cp {txt_path} {label_dest}")
-        os.system(f"cp {img_path} {img_dest}")
-        
-"""
-ChatGPT様より
-改善ポイント
-クロスプラットフォーム対応
+        try:
+            shutil.copy(txt_path, label_dest)
+            shutil.copy(found_img_path, img_dest)
+            copy_count += 1
+        except Exception as e:
+            print(f"コピーエラー: {e}")
 
-os.system() の cp コマンドはLinux/Macでしか動作しません。
-Windows環境でも動作するようにするには、次のように shutil を使うのが望ましいです。
-python
-コードをコピーする
-import shutil
-shutil.copy(txt_path, label_dest)
-shutil.copy(img_path, img_dest)
-エラーハンドリング
+print("-" * 30)
+print(f"処理完了: {copy_count} 組コピーしました。")
 
-もし画像ファイルが存在しない場合に備え、try-except で例外処理を入れると、さらに堅牢なコードになります。
-"""
-        
+if missing_count > 0:
+    print(f"警告: {missing_count} 個のラベルに対応する画像が見つかりませんでした。")
