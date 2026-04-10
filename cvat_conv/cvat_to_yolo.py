@@ -58,7 +58,7 @@ if __name__ == "__main__":
     XML_PATH = 'annotations.xml' 
     
     # YOLO形式のテキストファイルを出力するフォルダ
-    OUTPUT_DIRECTORY = 'yolo_labels' 
+    OUTPUT_DIRECTORY = 'labels' 
     
     # データセットに存在するクラス名を順番に指定してください (0番目からIDが割り振られます)
     CLASS_LIST = ['bell_pepper'] 
