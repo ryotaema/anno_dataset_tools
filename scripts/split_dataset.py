@@ -1,12 +1,14 @@
 """
 split_dataset.py  –  YOLO形式データセットの train / val / test 分割スクリプト
-
+（GUIフォルダ選択対応版）
 """
 
 import argparse
 import logging
 import random
 import shutil
+import tkinter as tk
+from tkinter import filedialog
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -152,18 +154,34 @@ def main():
         description="YOLO 形式データセットの train/val/test 分割ツール",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--dataset_dir", type=str, required=True,
-                        help="データセットのルートディレクトリ（images/ と labels/ を含む）")
-    parser.add_argument("--train_ratio", type=float, default=0.7,  help="train の割合")
+    # required=True を外し、デフォルト値を None に変更
+    parser.add_argument("--dataset_dir", type=str, default=None,
+                        help="データセットのルートディレクトリ（指定しない場合はダイアログで選択）")
+    parser.add_argument("--train_ratio", type=float, default=0.8,  help="train の割合")
     parser.add_argument("--val_ratio",   type=float, default=0.2,  help="val の割合")
-    parser.add_argument("--test_ratio",  type=float, default=0.1,  help="test の割合（0で test なし）")
+    parser.add_argument("--test_ratio",  type=float, default=0.0,  help="test の割合（0で test なし）")
     parser.add_argument("--seed",        type=int,   default=42,   help="乱数シード（再現性確保）")
     parser.add_argument("--stratified",  action="store_true",      help="クラスバランスを維持した stratified split を使用")
     parser.add_argument("--move",        action="store_true",      help="コピーの代わりに移動（元ファイルを削除）")
     parser.add_argument("--dry_run",     action="store_true",      help="実際には書き込まずに動作確認")
     args = parser.parse_args()
 
-    dataset_dir = Path(args.dataset_dir).expanduser().resolve()
+    dataset_dir_str = args.dataset_dir
+
+    # コマンドライン引数でディレクトリが指定されていない場合、ダイアログを開く
+    if dataset_dir_str is None:
+        root = tk.Tk()
+        root.withdraw()  # 余分なメインウィンドウを隠す
+        dataset_dir_str = filedialog.askdirectory(
+            title="データセットのルートフォルダを選択してください (images/ と labels/ を含むフォルダ)"
+        )
+        
+        # キャンセルされた場合は終了
+        if not dataset_dir_str:
+            logger.error("フォルダ選択がキャンセルされました。スクリプトを終了します。")
+            return
+
+    dataset_dir = Path(dataset_dir_str).expanduser().resolve()
     labels_dir  = dataset_dir / "labels"
     images_dir  = dataset_dir / "images"
 
@@ -196,6 +214,7 @@ def main():
         logger.error(f"有効な .txt ファイルが見つかりません: {labels_dir}")
         return
 
+    logger.info(f"対象データセット: {dataset_dir}")
     logger.info(f"総データ数: {len(label_files)} 件")
     logger.info(f"分割比率  : train={train_r:.0%} / val={val_r:.0%} / test={test_r:.0%}")
     logger.info(f"Seed      : {args.seed}  / Stratified: {args.stratified}")
