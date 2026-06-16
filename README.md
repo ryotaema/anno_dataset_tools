@@ -21,3 +21,7 @@ python3 yolo_to_pascal.py
 -`pascal_to_yolo.py` :Pascal VOC形式からYOLO形式への変換
 -`split_dataset.py` :データセットを3つ(train,val,test)ように分割する
 
+## ライセンス
+
+このリポジトリは [MIT License](LICENSE) のもとで公開されています。
+
