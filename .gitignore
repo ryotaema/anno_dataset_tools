@@ -1,1 +1,5 @@
 cvat_conv/*.zip
+
+# Python
+__pycache__/
+*.py[cod]
