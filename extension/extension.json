@@ -1,0 +1,54 @@
+{
+  "name": "アノテーション整理",
+  "icon": "🗂",
+  "description": "データセットの内訳確認・train/val/test 分割・形式変換・品質検証。YOLO / Pascal VOC / CVAT に対応。",
+  "url": "https://github.com/ryotaema/anno_dataset_tools",
+  "requirements": ["pyyaml"],
+  "actions": [
+    {
+      "label": "📊 内訳を見る",
+      "kind": "streamlit",
+      "module": "app",
+      "function": "render_overview",
+      "note": "クラス・カメラ・取得日・セッション別の枚数を集計します。"
+    },
+    {
+      "label": "✂️ train / val / test に分ける",
+      "kind": "streamlit",
+      "module": "app",
+      "function": "render_split",
+      "note": "セッション単位でまとめて分けられます（似た画像が train と val に散らばる情報漏れを防げます）。"
+    },
+    {
+      "label": "🔍 アノテーションを検証する",
+      "kind": "command",
+      "command": ["python3", "scripts/anno_validator.py",
+                  "--labels_dir", "{labels_dir}",
+                  "--images_dir", "{images_dir}"],
+      "inputs": ["labels_dir", "images_dir"],
+      "note": "例: labels_dir に {data_dir}/dataset_11/labels/train、images_dir に {data_dir}/dataset_11/images/train"
+    },
+    {
+      "label": "🔄 YOLO → Pascal VOC 変換",
+      "kind": "command",
+      "command": ["python3", "scripts/yolo_to_pascal.py",
+                  "--yolo_labels_dir", "{labels_dir}",
+                  "--yolo_images_dir", "{images_dir}",
+                  "--voc_save_dir", "{out_dir}"],
+      "inputs": ["labels_dir", "images_dir", "out_dir"],
+      "note": "クラス名ファイルが必要なら --class_file を command に足してください。"
+    },
+    {
+      "label": "🔄 Pascal VOC → YOLO 変換",
+      "kind": "command",
+      "command": ["python3", "scripts/pascal_to_yolo.py", "--help"],
+      "note": "まず --help で引数を確認し、固まったら command を書き換えると入力欄つきになります。"
+    },
+    {
+      "label": "🖥 統合 GUI を起動する（ホストで実行）",
+      "kind": "desktop",
+      "command": ["python3", "dataset_manager_gui.py"],
+      "note": "条件抽出・間引き・統合など、ここに無い機能もまとめて扱えます。Tkinter の画面なのでホストで実行します。"
+    }
+  ]
+}
