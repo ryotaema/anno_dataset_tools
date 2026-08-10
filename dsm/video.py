@@ -408,37 +408,131 @@ def diff_score(prev_small, small):
     return float(abs(small - prev_small).mean())
 
 
-def sample_quality(plan, n=24, on_progress=None):
-    """プレビュー用に候補フレームを少しだけ実測する。
+def filter_rest_possible(settings):
+    """品質フィルタで弾いた分が _rest/ に出る設定か。
+
+    「残り: 破棄する」でも、フィルタで弾いた分は _rest/ に残せる。
+    プレビューの枚数だけを見ると 0 に見えるので、表示側で補足するために使う。
+    """
+    return bool((settings.skip_similar or settings.skip_blur) and settings.rest_rejected)
+
+
+def _sample_blocks(frames, n, blocks=4):
+    """候補フレームから、連続したかたまりを動画全体に散らして取り出す。
+
+    ブレ判定は動画全体に散らして測りたい一方、似すぎ判定は「隣り合う候補同士」の
+    差でなければ意味がないため、等間隔の飛び飛びではなく連続したかたまりで測る。
+    """
+    if not frames:
+        return []
+    n = max(1, min(n, len(frames)))
+    size = min(max(2, n // max(1, blocks)), len(frames))
+    blocks = max(1, min(blocks, len(frames) // size))   # かたまり同士が重ならない数に抑える
+    step = len(frames) / blocks
+
+    out, used = [], set()
+    for i in range(blocks):
+        s = min(int(i * step), len(frames) - size)
+        block = tuple(frames[s:s + size])
+        if block and block not in used:
+            used.add(block)
+            out.append(list(block))
+    return out
+
+
+@dataclass
+class Measure:
+    """品質フィルタの試算のために実測したフレームの指標。
+
+    blocks は動画・かたまりごとの [(ブレ具合, 縮小画像), ...]。
+    similar は隣り合うフレームの比較なので、かたまりをまたがずに試算する。
+    """
+    blocks:     list = field(default_factory=list)
+    sampled:    int = 0
+    candidates: int = 0        # 実際に抽出する候補フレームの総数
+
+    @property
+    def blur_values(self):
+        return [b for block in self.blocks for b, _ in block]
+
+    @property
+    def diff_values(self):
+        """かたまりの中で隣り合うフレームどうしの差。"""
+        out = []
+        for block in self.blocks:
+            prev = None
+            for _, small in block:
+                if prev is not None:
+                    out.append(diff_score(prev, small))
+                prev = small
+        return out
+
+    def scale(self, n):
+        """サンプル中の枚数を全体の枚数に換算する。"""
+        if not self.sampled:
+            return 0
+        return int(round(n / self.sampled * self.candidates))
+
+
+def measure(plan, n=48, on_progress=None):
+    """候補フレームを少しだけ実測して、閾値の試算に使うデータを作る。"""
+    cv2 = load_cv2()
+    per_video = max(4, n // max(1, len(plan.plans)))
+    targets = [(vp, _sample_blocks(vp.picked, per_video)) for vp in plan.plans]
+    total = sum(len(b) for _, blocks in targets for b in blocks) or 1
+
+    result, done = Measure(candidates=sum(len(vp.picked) for vp in plan.plans)), 0
+    for vp, blocks in targets:
+        for frames in blocks:
+            seq = []
+            for _, img in _read_frames(cv2, vp.info.path, frames):
+                seq.append((blur_score(cv2, img), _gray_small(cv2, img)))
+                done += 1
+                if on_progress:
+                    on_progress(done, total)
+            if seq:
+                result.blocks.append(seq)
+    result.sampled = done
+    return result
+
+
+def simulate(m, blur_thresh=None, similar_thresh=None):
+    """その閾値なら何枚残るかを試算する。
 
     Returns:
-        {'blur': [値...], 'diff': [値...], 'suggest_blur': 推奨閾値}
+        {'kept': n, 'blur': 弾かれた数, 'similar': 弾かれた数,
+         'kept_total': 全体での見込み枚数}
     """
-    cv2 = load_cv2()
-    blur, diff = [], []
-
-    # 動画ごとに候補を等間隔でサンプリングする（全部デコードすると遅いため）
-    per_video = max(2, n // max(1, len(plan.plans)))
-    targets = [(vp, _even_indices(vp.picked, per_video)) for vp in plan.plans]
-    total = sum(len(f) for _, f in targets)
-
-    done = 0
-    for vp, frames in targets:
+    kept = blur_rej = sim_rej = 0
+    for block in m.blocks:
         prev = None
-        for _, img in _read_frames(cv2, vp.info.path, frames):
-            blur.append(blur_score(cv2, img))
-            small = _gray_small(cv2, img)
-            diff.append(diff_score(prev, small))
+        for blur, small in block:
+            if blur_thresh is not None and blur < blur_thresh:
+                blur_rej += 1
+                continue
+            if similar_thresh is not None and diff_score(prev, small) < similar_thresh:
+                sim_rej += 1
+                continue
             prev = small
-            done += 1
-            if on_progress:
-                on_progress(done, total)
+            kept += 1
+    return {'kept': kept, 'blur': blur_rej, 'similar': sim_rej,
+            'kept_total': m.scale(kept)}
 
-    suggest = 0.0
-    if blur:
-        s = sorted(blur)
-        suggest = round(s[len(s) // 2] * 0.5, 1)      # 中央値の半分
-    return {'blur': blur, 'diff': diff, 'suggest_blur': suggest}
+
+def suggest_blur(m):
+    """ブレ判定の閾値の目安（実測の中央値の半分）。"""
+    values = sorted(m.blur_values)
+    if not values:
+        return 0.0
+    return round(values[len(values) // 2] * 0.5, 1)
+
+
+def stats_text(values):
+    """最小 / 中央 / 最大 を1行にまとめる（説明の表示用）。"""
+    if not values:
+        return '—'
+    s = sorted(values)
+    return (f'最小 {s[0]:.1f} / 中央 {s[len(s) // 2]:.1f} / 最大 {s[-1]:.1f}')
 
 
 # --------------------------------------------------------------- 読み出し
@@ -492,7 +586,7 @@ def _encode(cv2, img, settings):
     return buf.tobytes()
 
 
-def thumbnails(plan, count=8, width=200):
+def thumbnails(plan, count=8, width=200, on_progress=None):
     """プレビュー用のサムネイルを PNG の base64 文字列で返す。
 
     Tk 8.6 の PhotoImage(data=...) にそのまま渡せる形にしておく（PIL 不要）。
@@ -510,6 +604,8 @@ def thumbnails(plan, count=8, width=200):
     for vp in plan.plans:
         frames = sorted(f for v, f in picks if v is vp)
         for frame, img in _read_frames(cv2, vp.info.path, frames):
+            if on_progress:
+                on_progress(len(out) + 1, len(picks))
             h, w = img.shape[:2]
             small = cv2.resize(img, (width, max(1, int(round(h * width / w)))),
                                interpolation=cv2.INTER_AREA)

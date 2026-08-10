@@ -183,7 +183,10 @@ def main():
         print()
 
     if settings.skip_similar or settings.skip_blur:
-        print('※ 品質フィルタが有効なため、実際の枚数はこれより少なくなります\n')
+        print('※ 品質フィルタが有効なため、実際の抽出枚数はこれより少なくなります')
+        if V.filter_rest_possible(settings):
+            print('   弾いた分は _rest/ に入ります（枚数は実行するまで確定しません）')
+        print()
 
     print(f'合計 {plan.n_picked:,} 枚'
           + (f'（＋ _rest/ {plan.n_rest:,} 枚）' if plan.n_rest else ''))

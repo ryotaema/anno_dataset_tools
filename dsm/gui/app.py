@@ -117,17 +117,17 @@ class App(tk.Tk):
         from .tab_subset   import SubsetTab
         from .tab_tools    import ValidateTab, ConvertTab
 
-        # 前半（動画→画像・名前変更）はアノテーション前の下ごしらえ用で、
+        # 末尾2つ（動画→画像・名前変更）はアノテーション前の下ごしらえ用で、
         # 上のデータセット一覧ではなくフォルダを直接指定して動く。
         self.tabs = []
-        for cls, title in [(VideoTab,    '動画→画像'),
-                           (RenameTab,   '名前変更'),
-                           (OverviewTab, '概要'),
+        for cls, title in [(OverviewTab, '概要'),
                            (CollectTab,  'まとめる'),
                            (SplitTab,    '分割'),
                            (SubsetTab,   '抽出・間引き'),
                            (ValidateTab, '検証'),
-                           (ConvertTab,  '変換')]:
+                           (ConvertTab,  '変換'),
+                           (VideoTab,    '動画→画像'),
+                           (RenameTab,   '名前変更')]:
             tab = cls(self.nb, self.state)
             self.nb.add(tab, text=title)
             self.tabs.append(tab)

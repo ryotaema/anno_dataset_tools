@@ -9,12 +9,189 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
+from tkinter.scrolledtext import ScrolledText
 
 from .. import video as vid_mod
 from .common import PathRow
 
 THUMB_COUNT = 5
 THUMB_WIDTH = 170
+
+# 試算で並べる閾値の候補
+SIMILAR_STEPS = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0]
+BLUR_RATIOS = [0.1, 0.25, 0.5, 0.75, 1.0, 1.5]
+
+FILTER_HELP = """品質フィルタは「アノテーションする価値のないフレーム」を抽出から外す機能です。
+どちらも閾値を大きくするほど厳しくなり、残る枚数が減ります。
+
+■ 似すぎたフレームを飛ばす（閾値 0〜255・既定 2.0）
+  直前に「採用した」フレームと今のフレームを 64x64 の白黒に縮めて比べ、
+  1画素あたりの明るさの差の平均を取ります。この値が閾値より小さい
+  （＝似ている）フレームは採用しません。弾かれたフレームは比較の基準に
+  ならないので、動きが止まっている間はずっと飛ばされます。
+
+    0 に近い … ほぼ同じ絵。定点撮影で何も動いていない区間
+    1 〜 3   … わずかな揺れ・照明のちらつき程度の違い
+    10 以上  … 構図がはっきり変わっている
+
+  定点タイムラプスや、動きの遅い動画で効きます。同じ絵が大量に入ると、
+  アノテーションの手間が増えるうえ train と val に同じ絵が分かれて
+  val の成績が実力より良く出ます（情報漏れ）。
+
+■ ブレた画像を弾く（閾値・既定 100）
+  画像の輪郭のはっきり具合（Laplacian 分散）を測り、閾値より小さい
+  （＝ぼやけている）フレームを採用しません。
+  この値の大きさは被写体・解像度・明るさで大きく変わるため、
+  絶対的な目安はありません。下の「実測して試算する」で実際の動画の値を
+  見てから決めてください（既定の初期値は実測の中央値の半分です）。
+
+  手持ち撮影や、カメラを動かしながらの撮影で効きます。
+
+■ 弾いたフレームの行き先
+  「フィルタで弾いた分も _rest/ に残す」を入れておくと、弾いたフレームは
+  捨てられずに出力先の _rest/ に入ります。あとから見返して、
+  厳しすぎた場合に拾い直せます。
+"""
+
+
+class FilterDialog(tk.Toplevel):
+    """品質フィルタの説明と、閾値ごとの残り枚数の試算。"""
+
+    def __init__(self, tab):
+        super().__init__(tab)
+        self.tab = tab
+        self.measure = None
+        self.title('品質フィルタの説明と試算')
+        self.geometry('900x680')
+        self.transient(tab.winfo_toplevel())
+
+        text = ScrolledText(self, height=17, wrap='word')
+        text.insert('1.0', FILTER_HELP)
+        text.configure(state='disabled')
+        text.pack(fill='both', expand=True, padx=10, pady=(10, 6))
+
+        bar = ttk.Frame(self)
+        bar.pack(fill='x', padx=10, pady=(0, 4))
+        ttk.Button(bar, text='実測して試算する', command=self.run_measure).pack(side='left')
+        self.info_var = tk.StringVar(
+            value='この動画のフレームを少しだけ読み込んで、閾値ごとに何枚残るかを出します')
+        ttk.Label(bar, textvariable=self.info_var).pack(side='left', padx=(10, 0))
+
+        tables = ttk.Frame(self)
+        tables.pack(fill='both', expand=True, padx=10, pady=(0, 4))
+        self.sim_tree = self._make_table(tables, '似すぎ判定の閾値', '_on_pick_similar')
+        self.blur_tree = self._make_table(tables, 'ブレ判定の閾値', '_on_pick_blur')
+
+        self.now_var = tk.StringVar(value='')
+        ttk.Label(self, textvariable=self.now_var, foreground='#357').pack(
+            anchor='w', padx=14)
+        ttk.Label(self, text='※ 表の行をダブルクリックすると、その閾値をタブに反映します',
+                  foreground='#555').pack(anchor='w', padx=14, pady=(2, 0))
+
+        btns = ttk.Frame(self)
+        btns.pack(fill='x', padx=10, pady=8)
+        ttk.Button(btns, text='閉じる', command=self.destroy).pack(side='right')
+
+    def _make_table(self, master, title, handler):
+        box = ttk.LabelFrame(master, text=title)
+        box.pack(side='left', fill='both', expand=True, padx=(0, 8))
+        tree = ttk.Treeview(box, columns=('kept', 'dropped'), height=7)
+        tree.heading('#0', text='閾値')
+        tree.heading('kept', text='残る枚数（見込み）')
+        tree.heading('dropped', text='弾かれる枚数')
+        tree.column('#0', width=90, anchor='e', stretch=False)
+        tree.column('kept', width=150, anchor='e')
+        tree.column('dropped', width=120, anchor='e')
+        tree.tag_configure('current', font=('TkDefaultFont', 10, 'bold'))
+        tree.pack(fill='both', expand=True, padx=6, pady=6)
+        tree.bind('<Double-1>', getattr(self, handler))
+        return tree
+
+    # ------------------------------------------------------------------
+
+    def run_measure(self):
+        plan = self.tab.current_plan(for_measure=True)
+        if plan is None:
+            return
+        if not plan.plans:
+            messagebox.showinfo('動画を読めません', '対象の動画を読み込めませんでした。',
+                                parent=self)
+            return
+
+        status = self.tab.state.status
+        self.info_var.set('実測中...')
+        self.update_idletasks()
+        self.measure = vid_mod.measure(
+            plan, on_progress=lambda d, t: status.step(d, t, '実測中 '))
+        status.reset()
+        if not self.measure.sampled:
+            self.info_var.set('フレームを読み取れませんでした')
+            return
+
+        m = self.measure
+        self.info_var.set(
+            f'サンプル {m.sampled} 枚を実測（抽出候補は全部で {m.candidates:,} 枚）　'
+            f'似すぎ度: {vid_mod.stats_text(m.diff_values)}　'
+            f'くっきり度: {vid_mod.stats_text(m.blur_values)}')
+        self._fill_tables()
+
+    def _fill_tables(self):
+        m = self.measure
+        self.sim_tree.delete(*self.sim_tree.get_children())
+        for th in SIMILAR_STEPS:
+            r = vid_mod.simulate(m, similar_thresh=th)
+            tag = ('current',) if abs(th - self.tab.similar_th.get()) < 1e-6 else ()
+            self.sim_tree.insert('', 'end', text=f'{th:g}', tags=tag,
+                                 values=(f'{r["kept"]} / {m.sampled}'
+                                         f'（約 {r["kept_total"]:,} 枚）',
+                                         f'{r["similar"]}'))
+
+        median = vid_mod.suggest_blur(m) * 2 or 1.0
+        self.blur_tree.delete(*self.blur_tree.get_children())
+        for ratio in BLUR_RATIOS:
+            th = round(median * ratio, 1)
+            r = vid_mod.simulate(m, blur_thresh=th)
+            self.blur_tree.insert('', 'end', text=f'{th:g}',
+                                  values=(f'{r["kept"]} / {m.sampled}'
+                                          f'（約 {r["kept_total"]:,} 枚）',
+                                          f'{r["blur"]}'))
+        self._update_now()
+
+    def _update_now(self):
+        if not self.measure:
+            return
+        tab = self.tab
+        r = vid_mod.simulate(
+            self.measure,
+            blur_thresh=tab.blur_th.get() if tab.blur_var.get() else None,
+            similar_thresh=tab.similar_th.get() if tab.similar_var.get() else None)
+        parts = []
+        parts.append(f'似すぎ {tab.similar_th.get():g}' if tab.similar_var.get()
+                     else '似すぎ 使わない')
+        parts.append(f'ブレ {tab.blur_th.get():g}' if tab.blur_var.get()
+                     else 'ブレ 使わない')
+        self.now_var.set(
+            f'いまの設定（{" / ".join(parts)}）→ サンプル {self.measure.sampled} 枚中 '
+            f'{r["kept"]} 枚が残る見込み（全体で約 {r["kept_total"]:,} 枚。'
+            f'似すぎで {r["similar"]} 枚・ブレで {r["blur"]} 枚を除外）')
+
+    def _on_pick_similar(self, _event):
+        sel = self.sim_tree.selection()
+        if not sel:
+            return
+        self.tab.similar_th.set(float(self.sim_tree.item(sel[0], 'text')))
+        self.tab.similar_var.set(True)
+        self.tab._invalidate()
+        self._update_now()
+
+    def _on_pick_blur(self, _event):
+        sel = self.blur_tree.selection()
+        if not sel:
+            return
+        self.tab.blur_th.set(float(self.blur_tree.item(sel[0], 'text')))
+        self.tab.blur_var.set(True)
+        self.tab._invalidate()
+        self._update_now()
 
 
 class SourceRow(ttk.Frame):
@@ -53,6 +230,8 @@ class VideoTab(ttk.Frame):
         self.state = state
         self.plan = None
         self._thumbs = []          # PhotoImage の参照を保持（GCされると消えるため）
+        self._last_mode = ''
+        self._mode_values = {'sec': 1.0, 'frame': 30.0, 'fps': 2.0, 'count': 100.0}
 
         # --- 入力 ---
         src = ttk.LabelFrame(self, text='入力と出力')
@@ -164,17 +343,30 @@ class VideoTab(ttk.Frame):
                         command=self._invalidate).pack(side='left')
         self.similar_th = tk.DoubleVar(value=2.0)
         ttk.Spinbox(r6, from_=0.1, to=255, increment=0.5, textvariable=self.similar_th,
-                    width=6).pack(side='left', padx=(4, 14))
+                    width=6).pack(side='left', padx=(4, 2))
+        ttk.Label(r6, text='(0〜255・直前の採用フレームとの違い。小さい＝似ている)',
+                  foreground='#555').pack(side='left', padx=(0, 14))
         self.blur_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(r6, text='ブレた画像を弾く  閾値', variable=self.blur_var,
                         command=self._invalidate).pack(side='left')
         self.blur_th = tk.DoubleVar(value=100.0)
         ttk.Spinbox(r6, from_=1, to=100000, increment=10, textvariable=self.blur_th,
-                    width=8).pack(side='left', padx=(4, 4))
-        ttk.Button(r6, text='推奨値を測る', command=self.measure_blur).pack(side='left')
+                    width=8).pack(side='left', padx=(4, 2))
+        ttk.Label(r6, text='(輪郭のはっきり具合。小さい＝ぼやけている)',
+                  foreground='#555').pack(side='left')
+
+        r6b = ttk.Frame(rest)
+        r6b.pack(fill='x', padx=8, pady=(0, 2))
+        ttk.Button(r6b, text='フィルタの説明と試算...',
+                   command=self.open_filter_help).pack(side='left')
+        ttk.Label(r6b, text='← どの値にすると何枚残るかを実測して確かめられます',
+                  foreground='#357').pack(side='left', padx=(6, 14))
         self.keep_rejected = tk.BooleanVar(value=True)
-        ttk.Checkbutton(r6, text='弾いた分も _rest/ に残す', variable=self.keep_rejected
-                        ).pack(side='left', padx=(14, 0))
+        ttk.Checkbutton(r6b, text='フィルタで弾いた分も _rest/ に残す',
+                        variable=self.keep_rejected,
+                        command=self._invalidate).pack(side='left')
+        for v in (self.similar_th, self.blur_th):
+            v.trace_add('write', lambda *a: self._invalidate())
 
         r7 = ttk.Frame(rest)
         r7.pack(fill='x', padx=8, pady=(2, 8))
@@ -240,12 +432,23 @@ class VideoTab(ttk.Frame):
         self._invalidate()
 
     def _on_mode(self):
+        """指定方法を切り替える。値は方法ごとに覚えておく。
+
+        「全体から100枚」から「N秒ごと」に戻したときに 100 秒ごとになってしまうと
+        気付きにくい事故になるため、方法ごとに直前の値を保持する。
+        """
         mode = self.mode_var.get()
-        self.unit_var.set({'sec': '秒', 'frame': 'フレーム', 'fps': '枚/秒',
+        if self._last_mode and self._last_mode != mode:
+            try:
+                self._mode_values[self._last_mode] = self.value_var.get()
+            except tk.TclError:
+                pass
+            self.value_var.set(self._mode_values.get(mode, 1.0))
+        self._last_mode = mode
+
+        self.unit_var.set({'sec': '秒ごと', 'frame': 'フレームごと', 'fps': '枚/秒',
                            'count': '枚', 'all': ''}.get(mode, ''))
         self.value_spin.state(['disabled'] if mode == 'all' else ['!disabled'])
-        if mode == 'count' and self.value_var.get() < 2:
-            self.value_var.set(100)
         self._invalidate()
 
     def settings(self):
@@ -308,9 +511,18 @@ class VideoTab(ttk.Frame):
         self._clear_thumbs()
         if not self.thumb_var.get():
             return
-        self.state.status.message('サムネイル作成中')
+        status = self.state.status
+        # 選んだフレームまで順に読み進めるので、長い動画ではここが一番待たされる
+        scan = max((max(vp.picked) if vp.picked else 0) for vp in plan.plans)
+        if scan > 20000:
+            self.state.log.write(
+                '  サムネイル作成中（長い動画では時間がかかります。'
+                '不要なら「プレビューにサムネイルを出す」を外してください）')
+        status.message('サムネイル作成中')
         try:
-            thumbs = vid_mod.thumbnails(plan, count=THUMB_COUNT, width=THUMB_WIDTH)
+            thumbs = vid_mod.thumbnails(
+                plan, count=THUMB_COUNT, width=THUMB_WIDTH,
+                on_progress=lambda d, t: status.step(d, t, 'サムネイル '))
         except Exception as e:                      # 表示できなくても本処理は続ける
             self.state.log.write(f'  サムネイルを作成できませんでした: {e}')
             return
@@ -329,56 +541,54 @@ class VideoTab(ttk.Frame):
 
     # ------------------------------------------------------------------ 操作
 
-    def measure_blur(self):
-        """候補フレームを少し実測して、ブレ閾値の推奨値を入れる。"""
+    def current_plan(self, for_measure=False):
+        """いまの設定で抽出計画を作る。作れなければ None（理由はダイアログで出す）。"""
         if not self._check_cv2():
-            return
+            return None
         videos = self._videos()
         if not videos:
-            return
-        try:
-            plan = vid_mod.build_plan(videos, self.out_row.get() or '.', self.settings())
-        except ValueError as e:
-            messagebox.showerror('設定エラー', str(e))
-            return
-        if not plan.plans:
-            messagebox.showinfo('動画を読めません', '対象の動画を読み込めませんでした。')
-            return
-
-        status = self.state.status
-        q = vid_mod.sample_quality(
-            plan, on_progress=lambda d, t: status.step(d, t, '測定中 '))
-        status.reset()
-        if not q['blur']:
-            messagebox.showinfo('測定できません', 'フレームを読み取れませんでした。')
-            return
-        self.blur_th.set(q['suggest_blur'])
-        self.blur_var.set(True)
-        lo, hi = min(q['blur']), max(q['blur'])
-        self.state.log.write(
-            f'ブレ判定の実測: 最小 {lo:.0f} / 最大 {hi:.0f} → 閾値を {q["suggest_blur"]:.0f} '
-            f'にしました（小さいほどブレている）')
-        self._invalidate()
-
-    def preview(self):
-        if not self._check_cv2():
-            return
-        videos = self._videos()
-        if not videos:
-            return
-        out = self.out_row.get()
-        if not out:
-            messagebox.showinfo('出力先が未指定', '出力フォルダを指定してください。')
-            return
+            return None
         try:
             settings = self.settings()
         except ValueError as e:
             messagebox.showerror('設定エラー', str(e))
-            return
-
+            return None
+        out = self.out_row.get() or ('.' if for_measure else '')
+        if not out:
+            messagebox.showinfo('出力先が未指定', '出力フォルダを指定してください。')
+            return None
         self.state.status.message('動画を確認中')
-        self.plan = vid_mod.build_plan(videos, out, settings)
-        self.state.status.reset()
+        try:
+            return vid_mod.build_plan(videos, out, settings)
+        finally:
+            self.state.status.reset()
+
+    def open_filter_help(self):
+        """品質フィルタの説明と試算のウィンドウを開く。"""
+        FilterDialog(self)
+
+    def _existing_count(self, plan):
+        """出力先に、今回と同じ名前のファイルが何件あるか（上書きになる件数）。"""
+        if not plan.out_dir.is_dir():
+            return 0
+        s = plan.settings
+        n = 0
+        for vp in plan.plans:
+            for frame in vp.picked:
+                if (plan.out_dir / vp.name_of(frame, s.mod_code, s.ext)).exists():
+                    n += 1
+        return n
+
+    def preview(self):
+        self.plan = self.current_plan()
+        if self.plan is None:
+            return
+        settings = self.plan.settings
+
+        # フィルタで弾いた分も _rest/ に入るが、何枚になるかは実際に
+        # デコードするまで決まらない。数字だけ見て 0 と誤解しないよう印を付ける。
+        filtered = vid_mod.filter_rest_possible(settings)
+        mark = ' +α' if filtered else ''
 
         self.tree.delete(*self.tree.get_children())
         mod, ext = settings.mod_code, settings.ext
@@ -387,7 +597,8 @@ class VideoTab(ttk.Frame):
             self.tree.insert('', 'end', text=info.path.name,
                              values=(info.duration_text, f'{info.fps:.1f}',
                                      f'{info.width}x{info.height}',
-                                     f'{len(vp.picked):,}', f'{len(vp.rest):,}',
+                                     f'{len(vp.picked):,}{mark}',
+                                     f'{len(vp.rest):,}{mark}',
                                      vp.session, vp.first_name(mod, ext)))
             if vp.note:
                 self.state.log.write(f'  [{info.path.name}] {vp.note}')
@@ -395,11 +606,24 @@ class VideoTab(ttk.Frame):
             self.tree.insert('', 'end', text=path.name,
                              values=('', '', '', '', '', '', f'スキップ: {reason}'))
 
+        # 同じ動画を出し直したときは同じ名前になるので黙って上書きされる。
+        # 別の動画が同じセッションIDになっている場合もあるため先に知らせる。
+        existing = self._existing_count(self.plan)
+        if existing:
+            self.state.log.write(
+                f'  ⚠ 出力先に同じ名前のファイルが {existing:,} 件あります（上書きされます）: '
+                f'{self.plan.out_dir}')
+
         total = self.plan.n_picked
         msg = f'{total:,} 枚を出力します'
         if self.plan.n_rest:
             msg += f'（＋ _rest/ に {self.plan.n_rest:,} 枚）'
-        if settings.skip_similar or settings.skip_blur:
+        if existing:
+            msg += f'　⚠ うち {existing:,} 件は既存ファイルの上書き'
+        if filtered:
+            msg += ('　※ 「+α」は品質フィルタ分。抽出はこれより減り、'
+                    '減った分が _rest/ に増えます（枚数は実行時に確定）')
+        elif settings.skip_similar or settings.skip_blur:
             msg += '　※ 品質フィルタで実際はこれより少なくなります'
         if total:
             msg += '　▶ 下の「② 抽出を実行」で書き出します'
@@ -417,6 +641,8 @@ class VideoTab(ttk.Frame):
                 f'{self.plan.n_picked:,} 枚を {self.plan.out_dir} に書き出します。\n'
                 + (f'採用しなかった {self.plan.n_rest:,} 枚を _rest/ に残します。\n'
                    if self.plan.n_rest else '')
+                + ('品質フィルタで弾いた分は抽出から外れ、_rest/ に入ります。\n'
+                   if vid_mod.filter_rest_possible(s) else '')
                 + f'\nファイル名: {s.cam}_YYMMDD_HHMMSS_NNNNN_{s.mod_code}{s.ext}\n\n'
                 '実行しますか？'):
             return
