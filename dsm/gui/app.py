@@ -109,14 +109,20 @@ class App(tk.Tk):
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill='both', expand=True, padx=10, pady=6)
 
+        from .tab_video    import VideoTab
+        from .tab_rename   import RenameTab
         from .tab_overview import OverviewTab
         from .tab_collect  import CollectTab
         from .tab_split    import SplitTab
         from .tab_subset   import SubsetTab
         from .tab_tools    import ValidateTab, ConvertTab
 
+        # 前半（動画→画像・名前変更）はアノテーション前の下ごしらえ用で、
+        # 上のデータセット一覧ではなくフォルダを直接指定して動く。
         self.tabs = []
-        for cls, title in [(OverviewTab, '概要'),
+        for cls, title in [(VideoTab,    '動画→画像'),
+                           (RenameTab,   '名前変更'),
+                           (OverviewTab, '概要'),
                            (CollectTab,  'まとめる'),
                            (SplitTab,    '分割'),
                            (SubsetTab,   '抽出・間引き'),
