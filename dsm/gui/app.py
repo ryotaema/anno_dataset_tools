@@ -126,7 +126,7 @@ class App(tk.Tk):
                            (SubsetTab,   '抽出・間引き'),
                            (ValidateTab, '検証'),
                            (ConvertTab,  '変換'),
-                           (VideoTab,    '動画→画像'),
+                           (VideoTab,    '動画/bag→画像'),
                            (RenameTab,   '名前変更')]:
             tab = cls(self.nb, self.state)
             self.nb.add(tab, text=title)
