@@ -26,6 +26,33 @@ pip install tqdm     # CLI スクリプトの進捗表示
 足りないものがあってもその形式が使えないだけで、他のタブは従来どおり動きます．
 ROS 2 bag を読むときは、**ROS 2 環境を source したシェルから GUI を起動**してください．
 
+## 個人設定
+
+カメラ名やクラス名など，自分の環境だけで使う設定は `config.local.json` に書いておけます．
+このファイルは `.gitignore` 済みなので，リポジトリには上がりません．
+
+```bash
+cp config.example.json config.local.json   # 編集して使う
+```
+
+| 項目 | 内容 | 既定値 |
+|---|---|---|
+| `cameras` | カメラ名の候補（動画/bag→画像・名前変更タブ，ファイル名からの自動判定） | `["d435", "d405", "nyx"]` |
+| `default_cam` | カメラの初期値（`video`：動画/bag→画像タブと `extract_frames.py`，`rename`：名前変更タブ） | `{"video": "vid", "rename": "d435"}` |
+| `mod_codes` | フォルダ名・ファイル名 → モダリティコードの追加分（例：`{"thermal": "t"}`） | `{}` |
+| `classes` | 変換タブで classes.txt も読み込み済みのクラスも無いときに使うクラス一覧 | `[]` |
+| `keypoints` | YOLO-pose 変換のキーポイントの並び順（空なら XML の定義順） | `[]` |
+| `datasets` | GUI 起動時に自動で読み込むデータセットのフォルダ | `[]` |
+
+書かなかった項目は既定値のままです．`_` で始まる項目（`_comment` など）は無視されます．
+設定ファイルは次の順に探し，最初に見つかったものを使います．
+
+1. 環境変数 `DSM_CONFIG` で指定したファイル
+2. リポジトリ直下の `config.local.json`
+3. `~/.config/anno_dataset_tools/config.json`
+
+読み込んだファイルと，書き間違い（不明な項目・型の違い）の警告は GUI 起動時のログに出ます．
+
 ## 全体の流れ
 
 収集からアノテーション・学習までは次のように繋がります．
@@ -35,9 +62,9 @@ ROS 2 bag を読むときは、**ROS 2 環境を source したシェルから GU
               → mp4 や bag から nyx_260810_143000_00001_cv.jpg として切り出す
                 （動画・bag で撮った素材を使う場合のみ）
                                 ↓
-[1] 収集      real_syutoku / nyx660_syutoku
+[1] 収集      各自の収集スクリプト / 名前変更タブ
               → d435_260707_101741_00042_c.jpg のような自己完結した名前で保存
-                （旧命名・セッション間で重複する名前は ＞ 名前変更タブ でそろえる）
+                （既存データ・セッション間で重複する名前は ＞ 名前変更タブ でそろえる）
                                 ↓
 [2] まとめる  dataset_manager_gui.py ＞ まとめるタブ
               → 散らばった収集データを1フォルダに集約（必要なら zip）
@@ -56,13 +83,36 @@ ROS 2 bag を読むときは、**ROS 2 環境を source したシェルから GU
 [7] 学習
 ```
 
-[0] [1] の命名規則でカメラ・取得日・セッションがファイル名から読み取れるため、
+[0] [1] の[命名規則](#命名規則)でカメラ・取得日・セッションがファイル名から読み取れるため，
 [2] で1つのフォルダにまとめた後でも [5] で「どのカメラの・いつのデータが何%か」を
 集計でき、[6] でセッション単位の分割（情報漏れの防止）ができます．
 
 ファイル名がこの規則から外れていると [5] [6] の恩恵を受けられないうえ、
 **セッションが違うのに同じ名前**（`1color.jpg` など）だと [2] でまとめた時点で
 衝突します．心当たりがあれば先に**名前変更タブ**でそろえてください．
+命名規則に沿っていないデータでも，まとめる・分割・検証・変換などはそのまま使えます
+（カメラ・取得日・セッションの集計が「不明」になるだけです）．
+
+## 命名規則
+
+ファイル名に取得元の情報を入れておくと，1つのフォルダにまとめた後でも
+「どのカメラの・いつの・どのセッションの何枚目か」を復元できます．
+
+```
+{cam}_{YYMMDD}_{HHMMSS}_{NNNNN}_{mod}.{ext}
+d435_260707_101741_00042_c.jpg
+```
+
+| 部分 | 内容 | 例 |
+|---|---|---|
+| `{cam}` | カメラ名（英字で始まる英数字なら何でもよい） | `d435` / `webcam` / `cam1` |
+| `{YYMMDD}_{HHMMSS}` | セッション（撮影開始）の日時 | `260707_101741` |
+| `{NNNNN}` | セッション内の連番（5桁）．同じショットの color / depth は同じ番号 | `00042` |
+| `{mod}` | モダリティ | `c`（color）/ `d`（depth）/ `i1`（IR）/ 末尾 `v` は動画・bag 由来 |
+
+`{cam}_{YYMMDD}_{HHMMSS}` の組がセッションIDになります．
+自分の収集スクリプトでこの形式で保存するか，既存のデータを**名前変更タブ**
+（「標準命名」）で変換してください．
 
 ## データセット整理ツール（GUI）
 
@@ -126,7 +176,7 @@ python3 dataset_manager_gui.py
 1枚に複数クラスが写っている場合は各クラスに1枚ずつ数えるため、割合の合計が
 100% を超えることがあります（上の例では 92.0% + 24.0% + 8.0%）．
 
-カメラ・取得日・セッションは、`real_syutoku` / `nyx660_syutoku` の命名規則
+カメラ・取得日・セッションは，[命名規則](#命名規則)
 （`d435_260707_101741_00042_c.jpg`）から自動で読み取ります．
 規則に当てはまらない画像は「不明」にまとめられます．CSV に保存もできます．
 
@@ -224,10 +274,17 @@ spread   08:00→[1, 4, 7]   12:00→[1, 2, 3]（全部）   16:00→[1, 7, 14]
 
 - YOLO → Pascal VOC
 - Pascal VOC → YOLO
-- CVAT XML → YOLO
-- CVAT XML → YOLO-pose
+- CVAT XML → YOLO（CVAT for images 1.1 の box）
+- CVAT XML → YOLO-pose（CVAT for images 1.1 の skeleton）
 
 `classes.txt` を空欄にすると、読み込み済みデータセットのクラス定義を使います．
+CVAT 変換でそれも無いときは，XML に定義されたラベルの順番がそのままクラスIDになります．
+
+YOLO-pose 変換はクラス数・キーポイントの数や名前を問いません．
+キーポイントの並び順は XML のスケルトン定義から読み取り，各スケルトンは
+同じ `group_id` の box と対応付けます（box が無いときは見えている点を囲む矩形を使います）．
+YOLO の仕様上，**全クラスでキーポイント数を揃える**必要があります．
+変換後，ログに出る `kpt_shape` を data.yaml に書いてください．
 
 ### 動画/bag→画像 — 動画・bag からフレームを切り出す
 
@@ -238,7 +295,7 @@ spread   08:00→[1, 4, 7]   12:00→[1, 2, 3]（全部）   16:00→[1, 7, 14]
 |---|---|---|
 | 動画（mp4 / mov / avi ...） | 1ファイル = 1トラック | opencv |
 | ROS 2 bag（`metadata.yaml` + `*.db3`） | **画像トピックごと**に1トラック | rosbag2 |
-| RealSense `.bag`（収集スクリプトが作る形式） | **ストリームごと**（Color / Depth / IR） | pyrealsense2 |
+| RealSense `.bag`（RealSense Viewer / SDK で記録した形式） | **ストリームごと**（Color / Depth / IR） | pyrealsense2 |
 
 #### 中身を見ながらトラックを選ぶ
 
@@ -339,7 +396,7 @@ testbag   開始 26-08-06 16:06:40（bag の記録時刻） / 0:00:04
 実際にデコードするまで決まらないため、**抽出はプレビューの数より減り、
 減った分だけ `_rest/` が増えます**（確定した枚数は実行後にログに出ます）．
 
-**出力ファイル名**は収集スクリプトと同じ命名規則にそろえます．
+**出力ファイル名**は[命名規則](#命名規則)にそろえます．
 
 ```
 {cam}_{YYMMDD}_{HHMMSS}_{NNNNN}_{mod}.jpg
@@ -458,6 +515,8 @@ python3 scripts/anno_validator.py --labels_dir ./dataset/labels \
 # 形式変換
 python3 scripts/yolo_to_pascal.py --yolo_labels_dir L --yolo_images_dir I --voc_save_dir O
 python3 scripts/pascal_to_yolo.py --voc_dir V --img_dir I --yolo_save_dir O
+python3 cvat_conv/cvat_to_yolo.py annotations.xml -o labels/ [--classes classes.txt]
+python3 cvat_conv/cvat_to_yolo_pose.py annotations.xml -o labels/ [--classes classes.txt] [--keypoints kpts.txt]
 ```
 
 CLI 版の `split_dataset.py` は割合指定のみです．枚数指定・セッション単位の分割・
@@ -473,7 +532,9 @@ CLI 版の `split_dataset.py` は割合指定のみです．枚数指定・セ�
 ```
 anno_dataset_tools/
 ├── dataset_manager_gui.py       # 統合GUI の起動口
+├── config.example.json          # 個人設定のひな形（config.local.json にコピーして使う）
 ├── dsm/                         # GUI と共通で使う処理
+│   ├── config.py                #   個人設定の読み込み
 │   ├── naming.py                #   ファイル名から カメラ/日付/セッション を読む
 │   ├── dataset.py               #   データセットの走査・レイアウト判別・集計
 │   ├── ops.py                   #   分割・絞り込み・間引き・出力・zip
