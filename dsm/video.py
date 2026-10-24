@@ -3,7 +3,7 @@
 供給元（動画 / ROS 2 bag / RealSense bag）の読み方は dsm/sources.py にあり、
 ここでは「どのフレームを何という名前で出すか」を決める。
 
-出力名は収集スクリプトと同じ命名規則にそろえる:
+出力名は命名規則（README の「命名規則」）にそろえる:
 
     {cam}_{YYMMDD}_{HHMMSS}_{NNNNN}_{mod}.jpg
     例) nyx_260810_143000_00001_cv.jpg
@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import sources
+from .config import CONFIG
 from .sources import (VIDEO_EXTS, KIND_LABELS, Track, load_cv2, format_time,  # noqa: F401
                       detect_datetime, find_sources, probe, sample_indices)
 
@@ -59,7 +60,9 @@ MOD_BASES = {
     'det': 'detected（BBox描画済み）',
 }
 
-CAM_CHOICES = ['vid', 'd435', 'd405', 'nyx']
+# 'vid' は「カメラ不明の動画」．残りは個人設定（config.local.json の cameras）で変えられる
+CAM_CHOICES = ['vid'] + [c for c in CONFIG['cameras'] if c != 'vid']
+DEFAULT_CAM = CONFIG['default_cam'].get('video') or 'vid'
 
 
 def parse_time(text):

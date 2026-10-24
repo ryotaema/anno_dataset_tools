@@ -5,9 +5,9 @@
 
     動画            mp4 / mov / avi ...
     ROS 2 bag       metadata.yaml のあるフォルダ（画像トピックごとに選べる）
-    RealSense bag   収集スクリプトが作る .bag（Color/Depth/IR ごとに選べる）
+    RealSense bag   RealSense Viewer / SDK で記録した .bag（Color/Depth/IR ごとに選べる）
 
-出力名は収集スクリプトと同じ命名規則にそろえる:
+出力名は命名規則（README の「命名規則」）にそろえる:
 
     {cam}_{YYMMDD}_{HHMMSS}_{NNNNN}_{mod}.jpg
     例) nyx_260810_143000_00001_cv.jpg
@@ -237,8 +237,8 @@ def main():
     g.add_argument('--max-total', type=int, default=0, metavar='N', help='全体の上限枚数')
 
     g = parser.add_argument_group('名前の付け方')
-    g.add_argument('--cam', default='vid', metavar='CODE',
-                   help='カメラコード（vid / d435 / d405 / nyx / 任意）既定: vid')
+    g.add_argument('--cam', default=V.DEFAULT_CAM, metavar='CODE',
+                   help=f'カメラコード（{" / ".join(V.CAM_CHOICES)} / 任意）既定: {V.DEFAULT_CAM}')
     g.add_argument('--mod-default', dest='mod', default='c', metavar='CODE',
                    help='モダリティ（c=color / d=depth / i1=IR / det=BBox描画済み）既定: c。'
                         'bag は名前から推定するので --mod で個別に上書きする')

@@ -7,6 +7,7 @@ from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
 
 from .. import dataset as ds_mod
+from ..config import CONFIG
 from .common import PathRow
 
 REPO = Path(__file__).resolve().parents[2]
@@ -194,7 +195,8 @@ class ConvertTab(ttk.Frame):
                           ('out',    'YOLO txt 出力先:', 'dir'),
                           ('classes', 'classes.txt:', 'file')],
             'cvat2pose': [('xml',    'CVAT annotations.xml:', 'file'),
-                          ('out',    'YOLO-pose txt 出力先:', 'dir')],
+                          ('out',    'YOLO-pose txt 出力先:', 'dir'),
+                          ('classes', 'classes.txt:', 'file')],
         }
         for kind, fields in specs.items():
             frame = ttk.Frame(self.body)
@@ -212,6 +214,7 @@ class ConvertTab(ttk.Frame):
 
         ttk.Label(self, foreground='gray', justify='left', wraplength=900,
                   text='classes.txt を空欄にすると、読み込み済みデータセットのクラス定義を使います。'
+                       'それも無いときは個人設定の classes，CVAT 変換ではさらに XML のラベル定義順を使います．'
                        ).pack(anchor='w', padx=16)
         self._switch()
 
@@ -238,15 +241,19 @@ class ConvertTab(ttk.Frame):
     # ------------------------------------------------------------------
 
     def _classes_file(self, rows):
-        """classes.txt のパス。未指定なら読み込み済みクラスから一時ファイルを作る。"""
+        """classes.txt のパス。未指定なら読み込み済みクラスから一時ファイルを作る。
+
+        読み込み済みクラスも無いときは個人設定の classes を使う．
+        """
         given = rows.get('classes').get() if 'classes' in rows else ''
         if given:
             return given
-        if not self.state.classes:
+        classes = self.state.classes or CONFIG['classes']
+        if not classes:
             return ''
         tmp = Path(rows['out'].get() or '.').expanduser() / 'classes.txt'
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text('\n'.join(self.state.classes) + '\n')
+        tmp.write_text('\n'.join(classes) + '\n')
         self.state.log.write(f'classes.txt を生成しました: {tmp}')
         return str(tmp)
 
@@ -312,19 +319,25 @@ class ConvertTab(ttk.Frame):
             log.write('dry-run: CVAT 変換は dry-run に対応していないため実行しません')
             return
 
+        # classes.txt も読み込み済みクラスも個人設定の classes も無ければ None（XML のラベル定義順を使う）
+        classes_path = self._classes_file(rows)
+        classes = ([l.strip() for l in Path(classes_path).read_text().splitlines()
+                    if l.strip()] if classes_path else None)
+
         if kind == 'cvat2yolo':
             from cvat_to_yolo import convert_cvat_to_yolo
-            classes_path = self._classes_file(rows)
-            classes = ([l.strip() for l in Path(classes_path).read_text().splitlines()
-                        if l.strip()] if classes_path else self.state.classes)
-            if not classes:
-                raise ValueError('クラス一覧が必要です（classes.txt を指定してください）')
+            classes = convert_cvat_to_yolo(rows['xml'].get(), out, classes)
             log.write(f'CVAT → YOLO 変換: classes={classes}')
-            convert_cvat_to_yolo(rows['xml'].get(), out, classes)
         else:
             from cvat_to_yolo_pose import convert_cvat_to_yolo_pose
-            log.write('CVAT → YOLO-pose 変換')
-            convert_cvat_to_yolo_pose(rows['xml'].get(), out)
+            keypoints = CONFIG['keypoints'] or None
+            if keypoints:
+                log.write(f'  キーポイントの並び順（個人設定）: {keypoints}')
+            classes, num_kpts = convert_cvat_to_yolo_pose(rows['xml'].get(), out, classes,
+                                                          keypoints)
+            log.write(f'CVAT → YOLO-pose 変換: classes={classes} / kpt_shape=[{num_kpts}, 3]')
+        if not classes:
+            raise ValueError('クラスが見つかりません（classes.txt を指定してください）')
 
-        n = len(list(Path(out).glob('*.txt')))
+        n = len([p for p in Path(out).glob('*.txt') if p.name != 'classes.txt'])
         log.write(f'  出力: {n} ファイル → {out}')

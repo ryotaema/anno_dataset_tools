@@ -9,6 +9,7 @@ from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
 
 from .. import dataset as ds_mod
+from .. import config
 from .common import LogPane, StatusBar
 
 
@@ -78,6 +79,7 @@ class App(tk.Tk):
         self._build_tabs()
         self._build_footer()
         self.state.add_listener(self._refresh_sources)
+        self.after_idle(self._apply_config)
 
     # ------------------------------------------------------- データセット一覧
 
@@ -164,6 +166,25 @@ class App(tk.Tk):
         if conflict:
             self.log.write(f'  ⚠ クラス定義の不一致 — {conflict}')
         self.state.notify()
+
+    def _apply_config(self):
+        """個人設定の読み込み結果をログに出し，datasets を自動で読み込む．"""
+        cfg = config.CONFIG
+        if cfg['path']:
+            self.log.write(f'個人設定: {cfg["path"]}')
+        for w in config.WARNINGS:
+            self.log.write(f'  ⚠ {w}')
+        for d in cfg['datasets']:
+            if not Path(d).expanduser().is_dir():
+                self.log.write(f'  ⚠ 個人設定の datasets が見つかりません: {d}')
+                continue
+            ds = self.state.add(d)
+            if ds is not None:
+                self.log.write(f'読み込み: {ds.root}  形式={ds.layout or "不明"}  '
+                               f'画像={ds.n_images:,}  ラベル付き={ds.n_labeled:,}')
+        self.status.reset()
+        if cfg['datasets']:
+            self.state.notify()
 
     def remove_dataset(self):
         for iid in self.tree.selection():

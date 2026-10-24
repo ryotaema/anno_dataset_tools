@@ -1,6 +1,6 @@
 """ファイル名から取得元の属性（カメラ・日付・セッション）を読み取る。
 
-real_syutoku / nyx660_syutoku の収集スクリプトが付ける命名規則:
+このツール群で使う命名規則（README の「命名規則」を参照）:
 
     {cam}_{YYMMDD}_{HHMMSS}_{NNNNN}_{mod}.{ext}
     例) d435_260707_101741_00042_c.jpg
@@ -34,7 +34,7 @@ UNKNOWN = '不明'
 class NameInfo:
     """ファイル名から読み取れた属性。読み取れない項目は None。"""
     matched: bool = False
-    cam:     str = None        # 'd435' / 'd405' / 'nyx'
+    cam:     str = None        # 'd435' / 'webcam' など任意の英数字
     date:    str = None        # 'YYMMDD'
     time:    str = None        # 'HHMMSS'
     shot:    int = None

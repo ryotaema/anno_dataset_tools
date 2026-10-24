@@ -2,7 +2,7 @@
 
     動画          1ファイル = 1トラック
     ROS 2 bag     画像トピックごとに1トラック（metadata.yaml + *.db3 / *.mcap）
-    RealSense bag 収集スクリプトが作る .bag。ストリーム（Color/Depth/IR）ごとに1トラック
+    RealSense bag RealSense Viewer / SDK で記録した .bag。ストリーム（Color/Depth/IR）ごとに1トラック
 
 BBox を描画した画像を別トピックで流している場合、トピック名だけでは
 「どれが生画像でどれが描画済みか」が判断できない。そのため probe() でトラックを

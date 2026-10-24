@@ -30,13 +30,14 @@ from datetime import datetime
 from pathlib import Path
 
 from . import naming
+from .config import CONFIG
 from .dataset import IMAGE_EXTS
 
 LABEL_EXTS = {'.txt', '.xml'}
 LOG_NAME = 'rename_log.json'
 
 # ディレクトリ名・ファイル名に含まれるモダリティ → 命名規則のコード
-# （real_syutoku / nyx660_syutoku の収集スクリプトと同じ対応）
+# （命名規則の {mod} に使うコード）
 MOD_CODES = {
     'color':          'c',
     'depth':          'd',
@@ -49,6 +50,8 @@ MOD_CODES = {
     'detected':       'det',
     'annotated':      'det',
 }
+# 個人設定（config.local.json の mod_codes）で追加・上書きできる
+MOD_CODES.update({k.lower(): v for k, v in CONFIG['mod_codes'].items()})
 
 # ファイル名からモダリティを読むときの候補（長いものから順に判定する）
 _MOD_WORDS = sorted(MOD_CODES, key=len, reverse=True)

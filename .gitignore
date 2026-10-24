@@ -3,3 +3,6 @@ cvat_conv/*.zip
 # Python
 __pycache__/
 *.py[cod]
+
+# 個人設定（config.example.json をコピーして作る）
+config.local.json

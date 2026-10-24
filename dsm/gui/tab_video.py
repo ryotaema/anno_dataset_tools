@@ -1,7 +1,7 @@
 """動画→画像タブ — mp4 などからフレームを取り出して学習用の画像にする。
 
 取り出す間隔・枚数・範囲を指定し、採用しなかったフレームを予備プール（_rest/）に
-残すかどうかまで選べる。出力名は収集スクリプトと同じ命名規則にそろえるので、
+残すかどうかまで選べる。出力名は命名規則にそろえるので、
 抽出後そのまま概要・分割タブでセッション単位に扱える。
 """
 
@@ -617,13 +617,13 @@ class VideoTab(ttk.Frame):
             v.trace_add('write', lambda *a: self._invalidate())
 
         # --- 名前 ---
-        nm = ttk.LabelFrame(self, text='ファイル名（収集スクリプトと同じ命名規則にそろえます）')
+        nm = ttk.LabelFrame(self, text='ファイル名（命名規則にそろえます）')
         nm.pack(fill='x', padx=8, pady=4)
 
         r3 = ttk.Frame(nm)
         r3.pack(fill='x', padx=8, pady=(8, 2))
         ttk.Label(r3, text='カメラ:').pack(side='left')
-        self.cam_var = tk.StringVar(value='vid')
+        self.cam_var = tk.StringVar(value=vid_mod.DEFAULT_CAM)
         ttk.Combobox(r3, textvariable=self.cam_var, width=10,
                      values=vid_mod.CAM_CHOICES).pack(side='left', padx=(4, 12))
         ttk.Label(r3, text='モダリティ:').pack(side='left')

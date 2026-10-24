@@ -15,6 +15,7 @@ from pathlib import Path
 from tkinter import ttk, messagebox
 
 from .. import rename as rn
+from ..config import CONFIG
 from .common import PathRow
 
 PREVIEW_LIMIT = 500
@@ -82,9 +83,9 @@ class RenameTab(ttk.Frame):
         ttk.Radiobutton(r4, text='標準命名', value='standard', variable=self.mode_var,
                         command=self._on_mode).pack(side='left')
         ttk.Label(r4, text='カメラ:').pack(side='left', padx=(10, 0))
-        self.cam_var = tk.StringVar(value='d435')
-        self.cam_entry = ttk.Combobox(r4, textvariable=self.cam_var, width=8,
-                                      values=['d435', 'd405', 'nyx', 'vid'])
+        cams = CONFIG['cameras'] + ['vid']
+        self.cam_var = tk.StringVar(value=CONFIG['default_cam'].get('rename') or cams[0])
+        self.cam_entry = ttk.Combobox(r4, textvariable=self.cam_var, width=8, values=cams)
         self.cam_entry.pack(side='left', padx=(4, 8))
         ttk.Label(r4, text='日時:').pack(side='left')
         self.dt_var = tk.StringVar(value='260101_090000')

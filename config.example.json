@@ -1,0 +1,9 @@
+{
+  "_comment": "config.local.json という名前でコピーして使う（git には上がらない）．不要な項目は消してよい",
+  "cameras": ["d435", "d405", "webcam"],
+  "default_cam": {"video": "vid", "rename": "d435"},
+  "mod_codes": {"thermal": "t"},
+  "classes": ["class_a", "class_b"],
+  "keypoints": ["kp_1", "kp_2", "kp_3"],
+  "datasets": ["~/datasets/my_dataset"]
+}
