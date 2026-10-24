@@ -143,7 +143,7 @@ def load_classes(root):
         except Exception:
             continue
         names = (data or {}).get('names')
-        if isinstance(names, dict):          # {0: 'pepper', 1: ...}
+        if isinstance(names, dict):          # {0: 'class_a', 1: ...}
             return [names[k] for k in sorted(names)]
         if isinstance(names, list):
             return list(names)

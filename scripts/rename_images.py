@@ -4,7 +4,7 @@
 セッションが違っても `1color.jpg` のような同じ名前が使われていると、1つの
 フォルダに集約した時点で衝突する。ファイル名に「どのデータか」を書き込んでおく。
 
-    260101_house/color/1color.jpg  →  260101_house_1color_c.jpg
+    260101_lab/color/1color.jpg  →  260101_lab_1color_c.jpg
 
 既定は dry-run。実際に変更するには --apply を付けること。
 実行内容は rename_log.json に記録され、--undo でいつでも元に戻せる。
@@ -13,22 +13,22 @@ GUI 版: python3 dataset_manager_gui.py ＞「名前変更」タブ
 
 使い方:
     # フォルダから提案される名前を確認（dry-run）
-    python3 scripts/rename_images.py 260101_house/color
+    python3 scripts/rename_images.py 260101_lab/color
 
     # 先頭と末尾を自分で指定して実行
-    python3 scripts/rename_images.py 260101_house/color \\
-        --prefix 260101_house_ --suffix _c --apply
+    python3 scripts/rename_images.py 260101_lab/color \\
+        --prefix 260101_lab_ --suffix _c --apply
 
     # テンプレートで組み立てる（配下のモダリティ別フォルダをまとめて処理）
-    python3 scripts/rename_images.py 260101_house \\
+    python3 scripts/rename_images.py 260101_lab \\
         --template '{parent2}_{stem}_{mod}' --apply
 
     # 標準命名（{cam}_{YYMMDD}_{HHMMSS}_{NNNNN}_{mod}）に変換する
-    python3 scripts/rename_images.py 260101_house \\
+    python3 scripts/rename_images.py 260101_lab \\
         --standard --cam d435 --datetime 260101_090000 --apply
 
     # 元に戻す
-    python3 scripts/rename_images.py 260101_house --undo
+    python3 scripts/rename_images.py 260101_lab --undo
 """
 
 import argparse

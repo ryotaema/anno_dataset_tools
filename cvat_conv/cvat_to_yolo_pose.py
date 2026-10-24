@@ -1,7 +1,25 @@
 import xml.etree.ElementTree as ET
 import os
 
-def convert_cvat_to_yolo_pose(xml_file, output_dir):
+def read_keypoint_labels(root):
+    """XMLのメタデータからスケルトンのキーポイント名を定義順に取り出す．
+
+    CVATのXMLでは，スケルトンの各点が <parent> 付きの <label> として
+    <meta> に書かれている．見つからない場合はアノテーション中の出現順を使う．
+    """
+    labels = []
+    for label in root.findall('./meta//label'):
+        name = label.findtext('name')
+        if label.findtext('parent') and name and name not in labels:
+            labels.append(name)
+    if not labels:
+        for pt in root.iter('points'):
+            name = pt.get('label')
+            if name and name not in labels:
+                labels.append(name)
+    return labels
+
+def convert_cvat_to_yolo_pose(xml_file, output_dir, keypoint_labels=None):
     # XMLファイルの読み込み
     tree = ET.parse(xml_file)
     root = tree.getroot()
@@ -9,12 +27,12 @@ def convert_cvat_to_yolo_pose(xml_file, output_dir):
     # 出力先ディレクトリの作成
     os.makedirs(output_dir, exist_ok=True)
     
-    # YOLOのフォーマットではキーポイントの順番を固定する必要があります。
-    # XMLのメタデータに記載されていたキーポイントのラベルを順番に定義します。
-    # ※必要に応じて順番を変更してください。
-    keypoint_labels = ["high_peduncle", "root_peduncle", "bottom_fruit"]
+    # YOLOのフォーマットではキーポイントの順番を固定する必要がある．
+    # 指定がなければXMLのメタデータに記載された順番を使う．
+    if keypoint_labels is None:
+        keypoint_labels = read_keypoint_labels(root)
     
-    # クラスIDの設定（例: bell_pepperを0とする）
+    # クラスIDの設定（単一クラスとして0を割り当てる）
     class_id = 0
     
     # 各画像要素をループ

@@ -77,10 +77,10 @@ python3 dataset_manager_gui.py
 
 ```
 ┌ データセット（複数読み込めます）──────────────────────┐
-│ /home/.../sam_ws/dataset          A   4,408   4,408   2  │
-│ /home/.../260624_pepper           C   1,200   1,180   2  │
+│ /home/.../dataset_a               A   2,500   2,500   2  │
+│ /home/.../dataset_b               C   1,000     980   2  │
 └──────────────────────────────────────────┘
- 合計 5,608 件 / ラベル付き 5,588 件 / BBox 18,204 個 / クラス 2 種
+ 合計 3,500 件 / ラベル付き 3,480 件 / BBox 11,300 個 / クラス 2 種
 ┌[概要][まとめる][分割][抽出・間引き][検証][変換][動画/bag→画像][名前変更]┐
 ```
 
@@ -117,14 +117,14 @@ python3 dataset_manager_gui.py
 
 ```
 区分                          枚数     割合                       BBox数
-0: bell_pepper               4,133    93.8%  █████████████████·   14,491
-1: pedicle                     995    22.6%  ████·············     1,204
-(ラベルなし)                    275     6.2%  █················         0
-合計（画像）                  4,408                                16,639
+0: class_a                   2,300    92.0%  █████████████████·    8,100
+1: class_b                     600    24.0%  ████·············       750
+(ラベルなし)                    200     8.0%  █················         0
+合計（画像）                  2,500                                 8,850
 ```
 
 1枚に複数クラスが写っている場合は各クラスに1枚ずつ数えるため、割合の合計が
-100% を超えることがあります（上の例では 93.8% + 22.6% + 6.2%）．
+100% を超えることがあります（上の例では 92.0% + 24.0% + 8.0%）．
 
 カメラ・取得日・セッションは、`real_syutoku` / `nyx660_syutoku` の命名規則
 （`d435_260707_101741_00042_c.jpg`）から自動で読み取ります．
@@ -167,10 +167,10 @@ train と val に分かれると val の成績が実力より良く出ます（�
 
 ```
 split / クラス            枚数     割合
-▼ train                  3,526    80.0%  ██████████████·
-     0: bell_pepper      3,306    93.8%
-     (ラベルなし)           220     6.2%
-▼ val                      882    20.0%  ███············
+▼ train                  2,000    80.0%  ██████████████·
+     0: class_a          1,840    92.0%
+     (ラベルなし)           160     8.0%
+▼ val                      500    20.0%  ███············
 ```
 
 ### 抽出・間引き — 条件を指定して取り出す
@@ -250,7 +250,7 @@ bag には複数の画像トピックが入っています．**BBox を描画し
 testbag   開始 26-08-06 16:06:40（bag の記録時刻） / 0:00:04
     種類     枚数  fps   開始   解像度   形式   mod  出力先
 [絵]☑ /camera/color/image_raw        60  15.0   0.0s  320x240  bgr8   c    本フォルダ
-[絵]☑ /pepper_detector/output       105  15.0  +3.0s  320x240  bgr8   det  _det/
+[絵]☑ /detector/output              105  15.0  +3.0s  320x240  bgr8   det  _det/
 [絵]☐ /camera/depth/image_rect_raw   30   7.5   0.0s  320x240  16uc1  d    本フォルダ
 [先頭] [中間] [終盤]   ← 選択した行の画像を大きく表示
 2 本を抽出します　連番の基準: /camera/color/image_raw（▲上へ で変えられます）
@@ -377,7 +377,7 @@ nyx_260810_143000_00001_cv.jpg
 ファイル名そのものに「どのデータか」を書き込んでおくためのタブです．
 
 ```
-260101_house/color/1color.jpg  →  260101_house_1color_c.jpg
+260101_lab/color/1color.jpg  →  260101_lab_1color_c.jpg
 ```
 
 フォルダを選ぶと**親フォルダ名から候補を提案**します（そのまま書き換えられます）．
@@ -404,7 +404,7 @@ nyx_260810_143000_00001_cv.jpg
 
 - 画像と同じフォルダ（labelImg の既定）
 - パス中の `images` を `labels` に置き換えた場所（`images/labels` 形式・`train/images` 形式）
-- 1〜2つ上のフォルダの `labels/`（`260101_house/color` ＋ `260101_house/labels`）
+- 1〜2つ上のフォルダの `labels/`（`260101_lab/color` ＋ `260101_lab/labels`）
 
 自動で見つからない構成のときは、ラベルの場所を明示することもできます．
 
@@ -415,7 +415,7 @@ nyx_260810_143000_00001_cv.jpg
   「連番を付けて回避する」（既定ON）なら `_2` `_3` を足して自動で回避します
 - `A→B` `B→A` のような入れ替えでも壊れないよう、一時名を経由した2段階で変更します
 - 「かんたん」は**すでに付いている先頭・末尾を足しません**．同じ設定で2回実行しても
-  `260101_house_260101_house_...` のように二重にはなりません
+  `260101_lab_260101_lab_...` のように二重にはなりません
 - 実行内容を `rename_log.json` に記録し、**「元に戻す」**でいつでも元の名前に戻せます
 - その場で名前を変えるほかに、**別フォルダにコピー**（原本を残す）も選べます
 - 「すでに標準命名のファイルは変えない」で二重変換を防げます
@@ -443,9 +443,9 @@ python3 scripts/extract_frames.py my_rec/ -o frames/ --every 1s --cam d435 \
     --mod /yolo/annotated_image=det --subdir /yolo/annotated_image=_det --apply
 
 # 名前の一括変更（既定は dry-run。--undo で元に戻す）
-python3 scripts/rename_images.py 260101_house/color --prefix 260101_house_ --suffix _c --apply
-python3 scripts/rename_images.py 260101_house --template '{parent2}_{stem}_{mod}' --apply
-python3 scripts/rename_images.py 260101_house --undo
+python3 scripts/rename_images.py 260101_lab/color --prefix 260101_lab_ --suffix _c --apply
+python3 scripts/rename_images.py 260101_lab --template '{parent2}_{stem}_{mod}' --apply
+python3 scripts/rename_images.py 260101_lab --undo
 
 # データセットの分割（フォルダ選択ダイアログが出ます）
 python3 scripts/split_dataset.py --train_ratio 0.8 --val_ratio 0.2 --stratified

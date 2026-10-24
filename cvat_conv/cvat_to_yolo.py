@@ -61,7 +61,7 @@ if __name__ == "__main__":
     OUTPUT_DIRECTORY = 'labels' 
     
     # データセットに存在するクラス名を順番に指定してください (0番目からIDが割り振られます)
-    CLASS_LIST = ['bell_pepper'] 
+    CLASS_LIST = ['class_a'] 
     
     convert_cvat_to_yolo(XML_PATH, OUTPUT_DIRECTORY, CLASS_LIST)
     print("YOLO形式への変換が完了しました。")

@@ -4,7 +4,7 @@
 フォルダに集約した時点で衝突し、学習時にどのデータか追えなくなる。そこで
 ファイル名そのものに「どのデータか」を書き込んでおく。
 
-    260101_house/color/1color.jpg  →  260101_house/color/260101_house_1color_c.jpg
+    260101_lab/color/1color.jpg  →  260101_lab/color/260101_lab_1color_c.jpg
 
 名前の作り方は3通り:
 
@@ -116,7 +116,7 @@ def _labels_for(image, include_labels, labels_dir=None):
 
         同じフォルダ                      labelImg の既定
         パス中の 'images' を 'labels' に   images/labels 形式・train/images 形式
-        1〜2つ上のフォルダの labels/       260101_house/color + 260101_house/labels
+        1〜2つ上のフォルダの labels/       260101_lab/color + 260101_lab/labels
     """
     if not include_labels:
         return []
@@ -310,7 +310,7 @@ def build_plan(root, spec, recursive=True, include_labels=True, labels_dir=None,
                 notes=list(notes))
 
     # コピー出力では元のフォルダ構成をそのまま写す。対象より外にあるラベル
-    # （260101_house/color を選んだときの 260101_house/labels など）も
+    # （260101_lab/color を選んだときの 260101_lab/labels など）も
     # 位置関係を保てるように、共通の親を基準にする。
     dirs = [str(root)] + [str(f.parent) for g in groups for f in g.files]
     plan.rel_base = Path(os.path.commonpath(dirs)) if dirs else root
@@ -530,8 +530,8 @@ def undo_last(root, on_progress=None):
 def suggest(root):
     """選んだフォルダから、名前の付け方の候補を作る。
 
-    260101_house/color を選んだ場合:
-        prefix='260101_house_' / suffix='_c' / template='{parent2}_{stem}_{mod}'
+    260101_lab/color を選んだ場合:
+        prefix='260101_lab_' / suffix='_c' / template='{parent2}_{stem}_{mod}'
 
     Returns:
         {'prefix': str, 'suffix': str, 'template': str, 'why': 説明}
